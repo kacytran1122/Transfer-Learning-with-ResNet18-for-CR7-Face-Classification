@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
-from huggingface_hub import hf_hub_download
+import os
+import urllib.request
 import torch
 import torch.nn as nn
 from torchvision import transforms, models
@@ -29,15 +30,16 @@ def load_model():
         return m
 
     try:
-        path = hf_hub_download(
-            repo_id="kacytran1122/cr7",
-            filename="cr_resnet18.pth"
-        )
+        url = "https://huggingface.co/kacytran1122/cr7/resolve/main/cr_resnet18.pth"
+        fn = "cr_resnet18.pth"
+
+        if not os.path.exists(fn):
+            urllib.request.urlretrieve(url, fn)
 
         net = models.resnet18(weights=None)
         f = net.fc.in_features
         net.fc = nn.Linear(f, 2)
-        net.load_state_dict(torch.load(path, map_location=d))
+        net.load_state_dict(torch.load(fn, map_location=d))
         net.eval()
 
         m = net
