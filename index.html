@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CR7 Classifier</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #f8fbff 0%, #eef4ff 45%, #fdf2f8 100%);
+      color: #1f2937;
+    }
+
+    .wrap {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 32px 20px 40px;
+    }
+
+    .title-wrap {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .main-title {
+      font-size: 2.6rem;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .sub-title {
+      font-size: 1.05rem;
+      color: #4b5563;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.9);
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: 0 10px 30px rgba(31, 41, 55, 0.10);
+      margin-bottom: 20px;
+    }
+
+    .small {
+      color: #6b7280;
+      font-size: 0.95rem;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 20px;
+      margin-top: 20px;
+    }
+
+    .badge-yes, .badge-no {
+      display: inline-block;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+
+    .badge-yes {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .badge-no {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .ok-box, .bad-box {
+      padding: 12px 14px;
+      border-radius: 14px;
+      margin: 10px 0 16px;
+      font-weight: 600;
+    }
+
+    .ok-box {
+      background: #ecfdf5;
+      color: #166534;
+      border: 1px solid #bbf7d0;
+    }
+
+    .bad-box {
+      background: #fef2f2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+
+    .bar-label {
+      margin: 10px 0 6px;
+      font-weight: 600;
+    }
+
+    .bar {
+      width: 100%;
+      height: 16px;
+      background: #e5e7eb;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .fill-cr7 {
+      height: 100%;
+      background: linear-gradient(90deg, #22c55e, #16a34a);
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+
+    .fill-not {
+      height: 100%;
+      background: linear-gradient(90deg, #ef4444, #dc2626);
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+
+    .preview {
+      width: 100%;
+      max-height: 420px;
+      object-fit: contain;
+      border-radius: 16px;
+      display: none;
+    }
+
+    input[type="file"] {
+      margin-top: 8px;
+    }
+
+    .result-area {
+      display: none;
+    }
+
+    .btn {
+      margin-top: 14px;
+      padding: 10px 18px;
+      border: none;
+      border-radius: 12px;
+      background: #2563eb;
+      color: white;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+
+    .btn:hover {
+      background: #1d4ed8;
+    }
+
+    @media (max-width: 760px) {
+      .row {
+        grid-template-columns: 1fr;
+      }
+
+      .main-title {
+        font-size: 2rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="title-wrap">
+      <div class="main-title">CR7 or Not?</div>
+      <div class="sub-title">
+        Upload one face image and the model will decide whether it is Cristiano Ronaldo.
+      </div>
+    </div>
+
+    <div class="card">
+      <label for="imgInput"><strong>Upload image</strong></label><br />
+      <input type="file" id="imgInput" accept="image/png, image/jpeg, image/jpg" />
+      <br />
+      <button class="btn" onclick="sendImage()">Predict</button>
+    </div>
+
+    <div id="introCard" class="card">
+      <h3 style="margin-top:0;">Binary Classification Task (2 classes)</h3>
+      <div class="small">
+        This app does only one thing:
+        <ul>
+          <li><b>CR7</b></li>
+          <li><b>Not CR7</b></li>
+        </ul>
+      </div>
+    </div>
+
+    <div id="resultArea" class="row result-area">
+      <div class="card">
+        <img id="preview" class="preview" alt="Uploaded image preview" />
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">Result</h3>
+
+        <div id="badge"></div>
+        <div id="msg"></div>
+
+        <div class="bar-label">CR7 probability: <span id="cr7Text">0.0000</span></div>
+        <div class="bar">
+          <div id="cr7Fill" class="fill-cr7"></div>
+        </div>
+
+        <div class="bar-label">Not CR7 probability: <span id="notText">0.0000</span></div>
+        <div class="bar">
+          <div id="notFill" class="fill-not"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const imgInput = document.getElementById("imgInput");
+    const preview = document.getElementById("preview");
+    const resultArea = document.getElementById("resultArea");
+    const introCard = document.getElementById("introCard");
+    const badge = document.getElementById("badge");
+    const msg = document.getElementById("msg");
+    const cr7Text = document.getElementById("cr7Text");
+    const notText = document.getElementById("notText");
+    const cr7Fill = document.getElementById("cr7Fill");
+    const notFill = document.getElementById("notFill");
+
+    imgInput.addEventListener("change", function () {
+      const file = this.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        preview.src = e.target.result;
+        preview.style.display = "block";
+      };
+      reader.readAsDataURL(file);
+    });
+
+    async function sendImage() {
+      const file = imgInput.files[0];
+      if (!file) {
+        alert("Please upload an image first.");
+        return;
+      }
+
+      const fd = new FormData();
+      fd.append("image", file);
+
+      const res = await fetch("/predict", {
+        method: "POST",
+        body: fd
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
+
+      resultArea.style.display = "grid";
+      introCard.style.display = "none";
+
+      cr7Text.textContent = data.p_cr7.toFixed(4);
+      notText.textContent = data.p_not.toFixed(4);
+      cr7Fill.style.width = `${data.p_cr7 * 100}%`;
+      notFill.style.width = `${data.p_not * 100}%`;
+
+      if (data.prediction === "CR7") {
+        badge.innerHTML = `<span class="badge-yes">CR7</span>`;
+        msg.innerHTML = `<div class="ok-box">The model predicts this image is Cristiano Ronaldo.</div>`;
+      } else {
+        badge.innerHTML = `<span class="badge-no">Not CR7</span>`;
+        msg.innerHTML = `<div class="bad-box">The model predicts this image is not Cristiano Ronaldo.</div>`;
+      }
+    }
+  </script>
+</body>
+</html>
