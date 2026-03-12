@@ -1,5 +1,4 @@
 from flask import Flask, request, jsonify
-import os
 from huggingface_hub import hf_hub_download
 import torch
 import torch.nn as nn
@@ -9,10 +8,9 @@ from PIL import Image
 app = Flask(__name__)
 
 d = torch.device("cpu")
-MODEL_NAME = "cr_resnet18.pth"
-HF_REPO = "kacytran1122/cr7"
 
-# change to 0 if your class order was ['target', 'other']
+# If your training classes were ['other', 'target'], keep 1.
+# If they were ['target', 'other'], change this to 0.
 cr7_idx = 1
 
 tf = transforms.Compose([
@@ -26,13 +24,14 @@ model_error = ""
 
 def load_model():
     global m, model_ready, model_error
+
     if m is not None:
         return m
 
     try:
         path = hf_hub_download(
-            repo_id=HF_REPO,
-            filename=MODEL_NAME
+            repo_id="kacytran1122/cr7",
+            filename="cr_resnet18.pth"
         )
 
         net = models.resnet18(weights=None)
@@ -45,6 +44,7 @@ def load_model():
         model_ready = True
         model_error = ""
         return m
+
     except Exception as e:
         model_ready = False
         model_error = str(e)
@@ -67,22 +67,33 @@ def health():
 def warmup():
     try:
         load_model()
-        return jsonify({"ok": True, "message": "Model loaded"})
+        return jsonify({
+            "ok": True,
+            "message": "Model loaded successfully"
+        })
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({
+            "ok": False,
+            "error": str(e)
+        }), 500
 
 @app.route("/predict", methods=["POST"])
 def predict():
+    global model_error
+
     try:
         net = load_model()
     except Exception:
-        return jsonify({"error": f"Model failed to load: {model_error}"}), 500
+        return jsonify({
+            "error": f"Model failed to load: {model_error}"
+        }), 500
 
     try:
         if "image" not in request.files:
             return jsonify({"error": "No image uploaded"}), 400
 
         f = request.files["image"]
+
         if f.filename == "":
             return jsonify({"error": "Please choose an image file"}), 400
 
@@ -102,6 +113,7 @@ def predict():
             "p_cr7": round(p_cr7, 4),
             "p_not": round(p_not, 4)
         })
+
     except Exception as e:
         print("PREDICT ERROR:", e, flush=True)
         return jsonify({"error": str(e)}), 500
