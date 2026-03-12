@@ -21,30 +21,38 @@ tf = transforms.Compose([
     transforms.ToTensor()
 ])
 
-def get_model():
-    if not os.path.exists(MODEL_NAME):
-        hf_hub_download(
+m = None
+MODEL_ERR = ""
+MODEL_READY = False
+
+def load_model_once():
+    global m, MODEL_ERR, MODEL_READY
+
+    if MODEL_READY and m is not None:
+        return m
+
+    try:
+        model_path = hf_hub_download(
             repo_id=HF_REPO,
-            filename=MODEL_NAME,
-            local_dir="."
+            filename=MODEL_NAME
         )
 
-    mdl = models.resnet18(weights=None)
-    f = mdl.fc.in_features
-    mdl.fc = nn.Linear(f, 2)
-    mdl.load_state_dict(torch.load(MODEL_NAME, map_location=d))
-    mdl.eval()
-    return mdl
+        mdl = models.resnet18(weights=None)
+        f = mdl.fc.in_features
+        mdl.fc = nn.Linear(f, 2)
+        mdl.load_state_dict(torch.load(model_path, map_location=d))
+        mdl.eval()
 
-try:
-    m = get_model()
-    MODEL_READY = True
-    MODEL_ERR = ""
-except Exception as e:
-    m = None
-    MODEL_READY = False
-    MODEL_ERR = str(e)
-    print("MODEL LOAD ERROR:", e)
+        m = mdl
+        MODEL_READY = True
+        MODEL_ERR = ""
+        return m
+
+    except Exception as e:
+        MODEL_READY = False
+        MODEL_ERR = str(e)
+        print("MODEL LOAD ERROR:", e)
+        raise
 
 @app.route("/")
 def home():
@@ -52,15 +60,28 @@ def home():
 
 @app.route("/health")
 def health():
+    global MODEL_READY, MODEL_ERR
     return jsonify({
         "ok": True,
         "model_ready": MODEL_READY,
         "model_error": MODEL_ERR
     })
 
+@app.route("/warmup")
+def warmup():
+    try:
+        load_model_once()
+        return jsonify({"ok": True, "message": "Model loaded"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 @app.route("/predict", methods=["POST"])
 def predict():
-    if not MODEL_READY:
+    global MODEL_READY, MODEL_ERR
+
+    try:
+        mdl = load_model_once()
+    except Exception:
         return jsonify({"error": f"Model failed to load: {MODEL_ERR}"}), 500
 
     try:
@@ -68,7 +89,6 @@ def predict():
             return jsonify({"error": "No image uploaded"}), 400
 
         f = request.files["image"]
-
         if f.filename == "":
             return jsonify({"error": "Please choose an image file"}), 400
 
@@ -76,7 +96,7 @@ def predict():
         x = tf(img).unsqueeze(0).to(d)
 
         with torch.no_grad():
-            z = m(x)
+            z = mdl(x)
             pr = torch.softmax(z, dim=1)[0].cpu()
 
         p_cr7 = float(pr[cr7_idx].item())
@@ -94,5 +114,5 @@ def predict():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, debug=False)
