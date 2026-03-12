@@ -3,3 +3,9 @@ torch
 torchvision
 pillow
 numpy
+flask
+gunicorn
+torch
+torchvision
+pillow
+huggingface_hub
