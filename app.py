@@ -10,8 +10,8 @@ app = Flask(__name__)
 
 d = torch.device("cpu")
 
-# If your training classes were ['other', 'target'], keep 1.
-# If they were ['target', 'other'], change this to 0.
+# If training classes were ['other', 'target'], keep 1.
+# If training classes were ['target', 'other'], change to 0.
 cr7_idx = 1
 
 tf = transforms.Compose([
@@ -69,15 +69,9 @@ def health():
 def warmup():
     try:
         load_model()
-        return jsonify({
-            "ok": True,
-            "message": "Model loaded successfully"
-        })
+        return jsonify({"ok": True, "message": "Model loaded successfully"})
     except Exception as e:
-        return jsonify({
-            "ok": False,
-            "error": str(e)
-        }), 500
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -86,9 +80,7 @@ def predict():
     try:
         net = load_model()
     except Exception:
-        return jsonify({
-            "error": f"Model failed to load: {model_error}"
-        }), 500
+        return jsonify({"error": f"Model failed to load: {model_error}"}), 500
 
     try:
         if "image" not in request.files:
