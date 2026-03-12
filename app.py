@@ -1,113 +1,22 @@
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify
 import os
 import urllib.request
-import torch
-import torch.nn as nn
-from torchvision import transforms, models
-from PIL import Image
 
 app = Flask(__name__)
 
-d = torch.device("cpu")
-
-# If training classes were ['other', 'target'], keep 1.
-# If training classes were ['target', 'other'], change to 0.
-cr7_idx = 1
-
-tf = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor()
-])
-
-m = None
-model_ready = False
-model_error = ""
-
-def load_model():
-    global m, model_ready, model_error
-
-    if m is not None:
-        return m
-
-    try:
-        url = "https://huggingface.co/kacytran1122/cr7/resolve/main/cr_resnet18.pth"
-        fn = "cr_resnet18.pth"
-
-        if not os.path.exists(fn):
-            urllib.request.urlretrieve(url, fn)
-
-        net = models.resnet18(weights=None)
-        f = net.fc.in_features
-        net.fc = nn.Linear(f, 2)
-        net.load_state_dict(torch.load(fn, map_location=d))
-        net.eval()
-
-        m = net
-        model_ready = True
-        model_error = ""
-        return m
-
-    except Exception as e:
-        model_ready = False
-        model_error = str(e)
-        print("MODEL LOAD ERROR:", e, flush=True)
-        raise
+URL = "https://huggingface.co/kacytran1122/cr7/resolve/main/cr_resnet18.pth"
+FN = "cr_resnet18.pth"
 
 @app.route("/")
 def home():
-    return "CR7 backend is running"
+    return "backend up"
 
-@app.route("/health")
-def health():
-    return jsonify({
-        "ok": True,
-        "model_ready": model_ready,
-        "model_error": model_error
-    })
-
-@app.route("/warmup")
-def warmup():
+@app.route("/test-download")
+def test_download():
     try:
-        load_model()
-        return jsonify({"ok": True, "message": "Model loaded successfully"})
+        if not os.path.exists(FN):
+            urllib.request.urlretrieve(URL, FN)
+        sz = os.path.getsize(FN)
+        return jsonify({"ok": True, "size_bytes": sz})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
-
-@app.route("/predict", methods=["POST"])
-def predict():
-    global model_error
-
-    try:
-        net = load_model()
-    except Exception:
-        return jsonify({"error": f"Model failed to load: {model_error}"}), 500
-
-    try:
-        if "image" not in request.files:
-            return jsonify({"error": "No image uploaded"}), 400
-
-        f = request.files["image"]
-
-        if f.filename == "":
-            return jsonify({"error": "Please choose an image file"}), 400
-
-        img = Image.open(f.stream).convert("RGB")
-        x = tf(img).unsqueeze(0).to(d)
-
-        with torch.no_grad():
-            z = net(x)
-            pr = torch.softmax(z, dim=1)[0].cpu()
-
-        p_cr7 = float(pr[cr7_idx].item())
-        p_not = 1.0 - p_cr7
-        pred = "CR7" if p_cr7 >= 0.5 else "Not CR7"
-
-        return jsonify({
-            "prediction": pred,
-            "p_cr7": round(p_cr7, 4),
-            "p_not": round(p_not, 4)
-        })
-
-    except Exception as e:
-        print("PREDICT ERROR:", e, flush=True)
-        return jsonify({"error": str(e)}), 500
