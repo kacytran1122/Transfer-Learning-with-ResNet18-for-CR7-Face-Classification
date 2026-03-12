@@ -1,290 +1,98 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CR7 or Not?</title>
-  <style>
-    * { box-sizing: border-box; font-family: Arial, sans-serif; }
+from flask import Flask, render_template, request, jsonify
+import os
+from huggingface_hub import hf_hub_download
+import torch
+import torch.nn as nn
+from torchvision import transforms, models
+from PIL import Image
 
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background: linear-gradient(135deg, #f8fbff 0%, #eef4ff 45%, #fdf2f8 100%);
-      color: #1f2937;
-    }
+app = Flask(__name__)
 
-    .wrap {
-      max-width: 940px;
-      margin: 0 auto;
-      padding: 36px 20px 50px;
-    }
+d = torch.device("cpu")
+MODEL_NAME = "cr_resnet18.pth"
+HF_REPO = "kacytran1122/cr7"
 
-    .title-wrap {
-      text-align: center;
-      margin-bottom: 22px;
-    }
+# If training classes were ['other', 'target'], keep 1.
+# If training classes were ['target', 'other'], change to 0.
+cr7_idx = 1
 
-    .main-title {
-      font-size: 2.6rem;
-      font-weight: 800;
-      margin-bottom: 8px;
-    }
+tf = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor()
+])
 
-    .sub-title {
-      font-size: 1.05rem;
-      color: #4b5563;
-      line-height: 1.5;
-    }
+def get_model():
+    if not os.path.exists(MODEL_NAME):
+        hf_hub_download(
+            repo_id=HF_REPO,
+            filename=MODEL_NAME,
+            local_dir="."
+        )
 
-    .card {
-      background: rgba(255,255,255,0.92);
-      border-radius: 22px;
-      padding: 22px;
-      box-shadow: 0 12px 30px rgba(31, 41, 55, 0.10);
-      margin-bottom: 20px;
-    }
+    mdl = models.resnet18(weights=None)
+    f = mdl.fc.in_features
+    mdl.fc = nn.Linear(f, 2)
+    mdl.load_state_dict(torch.load(MODEL_NAME, map_location=d))
+    mdl.eval()
+    return mdl
 
-    .row {
-      display: grid;
-      grid-template-columns: 1.1fr 0.9fr;
-      gap: 20px;
-      margin-top: 20px;
-    }
+try:
+    m = get_model()
+    MODEL_READY = True
+    MODEL_ERR = ""
+except Exception as e:
+    m = None
+    MODEL_READY = False
+    MODEL_ERR = str(e)
+    print("MODEL LOAD ERROR:", e)
 
-    .small {
-      color: #6b7280;
-      font-size: 0.95rem;
-    }
+@app.route("/")
+def home():
+    return render_template("index.html")
 
-    .preview {
-      width: 100%;
-      max-height: 430px;
-      object-fit: contain;
-      border-radius: 16px;
-      display: none;
-    }
+@app.route("/health")
+def health():
+    return jsonify({
+        "ok": True,
+        "model_ready": MODEL_READY,
+        "model_error": MODEL_ERR
+    })
 
-    .btn {
-      margin-top: 14px;
-      padding: 11px 18px;
-      border: none;
-      border-radius: 12px;
-      background: #2563eb;
-      color: white;
-      font-size: 1rem;
-      cursor: pointer;
-      font-weight: 700;
-    }
+@app.route("/predict", methods=["POST"])
+def predict():
+    if not MODEL_READY:
+        return jsonify({"error": f"Model failed to load: {MODEL_ERR}"}), 500
 
-    .btn:hover { background: #1d4ed8; }
+    try:
+        if "image" not in request.files:
+            return jsonify({"error": "No image uploaded"}), 400
 
-    .btn:disabled {
-      background: #9ca3af;
-      cursor: not-allowed;
-    }
+        f = request.files["image"]
 
-    .badge-yes, .badge-no {
-      display: inline-block;
-      padding: 8px 14px;
-      border-radius: 999px;
-      font-weight: 700;
-      margin-bottom: 12px;
-    }
+        if f.filename == "":
+            return jsonify({"error": "Please choose an image file"}), 400
 
-    .badge-yes {
-      background: #dcfce7;
-      color: #166534;
-    }
+        img = Image.open(f.stream).convert("RGB")
+        x = tf(img).unsqueeze(0).to(d)
 
-    .badge-no {
-      background: #fee2e2;
-      color: #991b1b;
-    }
+        with torch.no_grad():
+            z = m(x)
+            pr = torch.softmax(z, dim=1)[0].cpu()
 
-    .ok-box, .bad-box {
-      padding: 12px 14px;
-      border-radius: 14px;
-      margin: 10px 0 16px;
-      font-weight: 600;
-    }
+        p_cr7 = float(pr[cr7_idx].item())
+        p_not = 1.0 - p_cr7
+        pred = "CR7" if p_cr7 >= 0.5 else "Not CR7"
 
-    .ok-box {
-      background: #ecfdf5;
-      color: #166534;
-      border: 1px solid #bbf7d0;
-    }
+        return jsonify({
+            "prediction": pred,
+            "p_cr7": round(p_cr7, 4),
+            "p_not": round(p_not, 4)
+        })
 
-    .bad-box {
-      background: #fef2f2;
-      color: #991b1b;
-      border: 1px solid #fecaca;
-    }
+    except Exception as e:
+        print("PREDICT ERROR:", e)
+        return jsonify({"error": str(e)}), 500
 
-    .bar-label {
-      margin: 10px 0 6px;
-      font-weight: 600;
-    }
-
-    .bar {
-      width: 100%;
-      height: 16px;
-      background: #e5e7eb;
-      border-radius: 999px;
-      overflow: hidden;
-      margin-bottom: 14px;
-    }
-
-    .fill-cr7 {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, #22c55e, #16a34a);
-      transition: width 0.35s ease;
-    }
-
-    .fill-not {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, #ef4444, #dc2626);
-      transition: width 0.35s ease;
-    }
-
-    .hidden { display: none; }
-
-    .loader {
-      margin-top: 12px;
-      color: #2563eb;
-      font-weight: 700;
-    }
-
-    @media (max-width: 760px) {
-      .row { grid-template-columns: 1fr; }
-      .main-title { font-size: 2rem; }
-    }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="title-wrap">
-      <div class="main-title">CR7 or Not?</div>
-      <div class="sub-title">
-        Upload one face image and the model will decide whether it is Cristiano Ronaldo.
-      </div>
-    </div>
-
-    <div class="card">
-      <label for="imgInput"><strong>Upload image</strong></label><br />
-      <input type="file" id="imgInput" accept="image/png, image/jpeg, image/jpg" />
-      <br />
-      <button class="btn" id="predBtn" onclick="sendImage()">Predict</button>
-      <div class="small" style="margin-top:10px;">Best results come from one clear, front-facing face.</div>
-      <div id="loading" class="loader hidden">Predicting...</div>
-    </div>
-
-    <div id="introCard" class="card">
-      <h3 style="margin-top:0;">Binary Classification Task</h3>
-      <div class="small">
-        This app predicts only:
-        <ul>
-          <li><b>CR7</b></li>
-          <li><b>Not CR7</b></li>
-        </ul>
-      </div>
-    </div>
-
-    <div id="resultArea" class="row hidden">
-      <div class="card">
-        <img id="preview" class="preview" alt="Uploaded image preview" />
-      </div>
-
-      <div class="card">
-        <h3 style="margin-top:0;">Result</h3>
-        <div id="badge"></div>
-        <div id="msg"></div>
-
-        <div class="bar-label">CR7 probability: <span id="cr7Text">0.0000</span></div>
-        <div class="bar"><div id="cr7Fill" class="fill-cr7"></div></div>
-
-        <div class="bar-label">Not CR7 probability: <span id="notText">0.0000</span></div>
-        <div class="bar"><div id="notFill" class="fill-not"></div></div>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    const imgInput = document.getElementById("imgInput");
-    const preview = document.getElementById("preview");
-    const resultArea = document.getElementById("resultArea");
-    const introCard = document.getElementById("introCard");
-    const badge = document.getElementById("badge");
-    const msg = document.getElementById("msg");
-    const cr7Text = document.getElementById("cr7Text");
-    const notText = document.getElementById("notText");
-    const cr7Fill = document.getElementById("cr7Fill");
-    const notFill = document.getElementById("notFill");
-    const loading = document.getElementById("loading");
-    const predBtn = document.getElementById("predBtn");
-
-    imgInput.addEventListener("change", function () {
-      const file = this.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = function (e) {
-        preview.src = e.target.result;
-        preview.style.display = "block";
-      };
-      reader.readAsDataURL(file);
-    });
-
-    async function sendImage() {
-      const file = imgInput.files[0];
-      if (!file) {
-        alert("Please upload an image first.");
-        return;
-      }
-
-      const fd = new FormData();
-      fd.append("image", file);
-
-      predBtn.disabled = true;
-      loading.classList.remove("hidden");
-
-      try {
-        const res = await fetch("/predict", {
-          method: "POST",
-          body: fd
-        });
-
-        const data = await res.json();
-
-        if (!res.ok || data.error) {
-          alert(data.error || "Prediction failed.");
-          return;
-        }
-
-        resultArea.classList.remove("hidden");
-        introCard.classList.add("hidden");
-
-        cr7Text.textContent = Number(data.p_cr7).toFixed(4);
-        notText.textContent = Number(data.p_not).toFixed(4);
-        cr7Fill.style.width = `${Number(data.p_cr7) * 100}%`;
-        notFill.style.width = `${Number(data.p_not) * 100}%`;
-
-        if (data.prediction === "CR7") {
-          badge.innerHTML = '<span class="badge-yes">CR7</span>';
-          msg.innerHTML = '<div class="ok-box">The model predicts this image is Cristiano Ronaldo.</div>';
-        } else {
-          badge.innerHTML = '<span class="badge-no">Not CR7</span>';
-          msg.innerHTML = '<div class="bad-box">The model predicts this image is not Cristiano Ronaldo.</div>';
-        }
-      } catch (err) {
-        alert("Server error. Please try again.");
-      } finally {
-        predBtn.disabled = false;
-        loading.classList.add("hidden");
-      }
-    }
-  </script>
-</body>
-</html>
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
