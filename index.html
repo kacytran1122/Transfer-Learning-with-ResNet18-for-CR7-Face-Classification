@@ -102,7 +102,7 @@
       color: #991b1b;
     }
 
-    .ok-box, .bad-box, .err-box, .warn-box {
+    .ok-box, .bad-box, .err-box {
       padding: 12px 14px;
       border-radius: 14px;
       margin: 10px 0 16px;
@@ -125,12 +125,6 @@
       background: #fff7ed;
       color: #9a3412;
       border: 1px solid #fdba74;
-    }
-
-    .warn-box {
-      background: #fefce8;
-      color: #854d0e;
-      border: 1px solid #fde68a;
     }
 
     .bar-label {
@@ -184,19 +178,15 @@
       </div>
     </div>
 
-    {% if not model_ready %}
-    <div class="card">
-      <div class="err-box">
-        Model failed to load: {{ model_err }}
-      </div>
+    <div id="modelBox" class="card hidden">
+      <div id="modelErr" class="err-box"></div>
     </div>
-    {% endif %}
 
     <div class="card">
       <label for="imgInput"><strong>Upload image</strong></label><br />
       <input type="file" id="imgInput" accept="image/png, image/jpeg, image/jpg" />
       <br />
-      <button class="btn" id="predBtn" onclick="sendImage()" {% if not model_ready %}disabled{% endif %}>Predict</button>
+      <button class="btn" id="predBtn" onclick="sendImage()">Predict</button>
       <div class="small" style="margin-top:10px;">Best results come from one clear, front-facing face.</div>
       <div id="loading" class="loader hidden">Predicting...</div>
     </div>
@@ -244,6 +234,8 @@
     const notFill = document.getElementById("notFill");
     const loading = document.getElementById("loading");
     const predBtn = document.getElementById("predBtn");
+    const modelBox = document.getElementById("modelBox");
+    const modelErr = document.getElementById("modelErr");
 
     imgInput.addEventListener("change", function () {
       const file = this.files[0];
@@ -256,6 +248,23 @@
       };
       reader.readAsDataURL(file);
     });
+
+    async function checkHealth() {
+      try {
+        const res = await fetch("/health");
+        const data = await res.json();
+
+        if (!data.model_ready) {
+          modelBox.classList.remove("hidden");
+          modelErr.textContent = "Model failed to load: " + data.model_error;
+          predBtn.disabled = true;
+        }
+      } catch (e) {
+        modelBox.classList.remove("hidden");
+        modelErr.textContent = "Could not connect to backend health check.";
+        predBtn.disabled = true;
+      }
+    }
 
     async function sendImage() {
       const file = imgInput.files[0];
@@ -278,16 +287,14 @@
 
         const data = await res.json();
 
-        if (!res.ok) {
-          msg.innerHTML = `<div class="err-box">${data.error || "Prediction failed."}</div>`;
-          badge.innerHTML = "";
-          resultArea.classList.remove("hidden");
-          introCard.classList.add("hidden");
-          return;
-        }
-
         resultArea.classList.remove("hidden");
         introCard.classList.add("hidden");
+
+        if (!res.ok) {
+          badge.innerHTML = "";
+          msg.innerHTML = `<div class="err-box">${data.error || "Prediction failed."}</div>`;
+          return;
+        }
 
         cr7Text.textContent = Number(data.p_cr7).toFixed(4);
         notText.textContent = Number(data.p_not).toFixed(4);
@@ -311,6 +318,8 @@
         loading.classList.add("hidden");
       }
     }
+
+    checkHealth();
   </script>
 </body>
 </html>
