@@ -15,7 +15,6 @@ m.fc = nn.Linear(f, 2)
 m.load_state_dict(torch.load("cr_resnet18.pth", map_location=d))
 m.eval()
 
-# If training classes were ['other', 'target'], CR7 is index 1
 cr7_idx = 1
 
 tf = transforms.Compose([
