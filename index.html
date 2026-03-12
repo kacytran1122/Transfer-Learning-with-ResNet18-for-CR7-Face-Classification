@@ -102,7 +102,7 @@
       color: #991b1b;
     }
 
-    .ok-box, .bad-box, .err-box {
+    .ok-box, .bad-box, .err-box, .info-box {
       padding: 12px 14px;
       border-radius: 14px;
       margin: 10px 0 16px;
@@ -125,6 +125,12 @@
       background: #fff7ed;
       color: #9a3412;
       border: 1px solid #fdba74;
+    }
+
+    .info-box {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
     }
 
     .bar-label {
@@ -189,6 +195,7 @@
       <button class="btn" id="predBtn" onclick="sendImage()">Predict</button>
       <div class="small" style="margin-top:10px;">Best results come from one clear, front-facing face.</div>
       <div id="loading" class="loader hidden">Predicting...</div>
+      <div id="warmMsg" class="info-box hidden">Loading model for the first time. This can take a moment.</div>
     </div>
 
     <div id="introCard" class="card">
@@ -236,6 +243,7 @@
     const predBtn = document.getElementById("predBtn");
     const modelBox = document.getElementById("modelBox");
     const modelErr = document.getElementById("modelErr");
+    const warmMsg = document.getElementById("warmMsg");
 
     imgInput.addEventListener("change", function () {
       const file = this.files[0];
@@ -254,15 +262,13 @@
         const res = await fetch("/health");
         const data = await res.json();
 
-        if (!data.model_ready) {
+        if (!data.model_ready && data.model_error) {
           modelBox.classList.remove("hidden");
           modelErr.textContent = "Model failed to load: " + data.model_error;
-          predBtn.disabled = true;
         }
       } catch (e) {
         modelBox.classList.remove("hidden");
         modelErr.textContent = "Could not connect to backend health check.";
-        predBtn.disabled = true;
       }
     }
 
@@ -278,6 +284,7 @@
 
       predBtn.disabled = true;
       loading.classList.remove("hidden");
+      warmMsg.classList.remove("hidden");
 
       try {
         const res = await fetch("/predict", {
@@ -316,6 +323,7 @@
       } finally {
         predBtn.disabled = false;
         loading.classList.add("hidden");
+        warmMsg.classList.add("hidden");
       }
     }
 
